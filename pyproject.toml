@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "urirun-connector-human"
+version = "0.1.0"
+description = "human:// connector for urirun — turns human-in-the-loop tasks into first-class URI steps"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.entry-points."urirun.bindings"]
+human = "urirun_connector_human.urirun_bridge:urirun_bindings"
