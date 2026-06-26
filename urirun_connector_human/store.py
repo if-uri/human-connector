@@ -42,8 +42,6 @@ class TaskStore:
 
     # --- connection helpers -------------------------------------------------
     def _conn(self) -> sqlite3.Connection:
-        # New connection per call keeps the store safe across the surface's
-        # request threads without a global lock. Fine for an example/demo.
         conn = sqlite3.connect(self.path, timeout=10)
         conn.row_factory = sqlite3.Row
         return conn
@@ -55,24 +53,38 @@ class TaskStore:
                 CREATE TABLE IF NOT EXISTS tasks (
                     id          TEXT PRIMARY KEY,
                     node        TEXT,
-                    scope       TEXT,        -- 'per-instance' | 'per-env'
-                    kind        TEXT,        -- 'action' | 'judgement' | 'safety' | 'grant'
+                    scope       TEXT,
+                    kind        TEXT,
                     title       TEXT,
                     instruction TEXT,
-                    env         TEXT,        -- environment label (e.g. 'cell-a')
-                    payload     TEXT,        -- JSON: original request payload
-                    status      TEXT,        -- open|claimed|done|declined|cancelled
+                    env         TEXT,
+                    payload     TEXT,
+                    status      TEXT,
                     created     REAL,
                     updated     REAL,
                     claimed_by  TEXT,
                     resolved_by TEXT,
-                    outcome     TEXT,        -- done|declined
-                    result      TEXT,        -- JSON: worker note + structured result
-                    proof_path  TEXT,        -- optional photo / artifact path
-                    inverse     TEXT         -- JSON: {uri, payload} for reversibility
+                    outcome     TEXT,
+                    result      TEXT,
+                    proof_path  TEXT,
+                    inverse     TEXT,
+                    options     TEXT,   -- JSON: ["Option A","Option B"] for kind=choice
+                    fields      TEXT,   -- JSON: [{name,type,label,required}] for kind=form
+                    deadline    REAL    -- unix timestamp; null = no deadline
                 )
                 """
             )
+            # Migrate existing DBs that predate the new columns
+            for col, defn in [
+                ("options",  "TEXT"),
+                ("fields",   "TEXT"),
+                ("deadline", "REAL"),
+            ]:
+                try:
+                    c.execute(f"ALTER TABLE tasks ADD COLUMN {col} {defn}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS events (
@@ -98,22 +110,26 @@ class TaskStore:
         kind: str = "action",
         payload: Optional[dict] = None,
         inverse: Optional[dict] = None,
+        options: Optional[list] = None,
+        fields: Optional[list] = None,
+        deadline: Optional[float] = None,
     ) -> dict:
         tid = _new_id()
         now = _now()
-        # env is normally the node name or an environment fingerprint (a str).
-        # Be defensive: if a caller hands us a structured profile, store it as JSON
-        # rather than letting sqlite reject the bind.
         if not isinstance(env, str):
             env = json.dumps(env)
         with self._conn() as c:
             c.execute(
                 "INSERT INTO tasks (id,node,scope,kind,title,instruction,env,payload,"
-                "status,created,updated,inverse) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "status,created,updated,inverse,options,fields,deadline)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     tid, node, scope, kind, title, instruction, env,
                     json.dumps(payload or {}), "open", now, now,
                     json.dumps(inverse) if inverse else None,
+                    json.dumps(options) if options else None,
+                    json.dumps(fields) if fields else None,
+                    deadline,
                 ),
             )
         self.append_event(node=node, task_id=tid, type="human.task.requested",
@@ -159,7 +175,7 @@ class TaskStore:
         result: Optional[dict] = None,
         proof_path: Optional[str] = None,
     ) -> dict | None:
-        status = "done" if outcome == "done" else "declined"
+        status = "done" if outcome not in ("declined", "cancelled") else outcome
         with self._conn() as c:
             c.execute(
                 "UPDATE tasks SET status=?, outcome=?, resolved_by=?, result=?, "
@@ -213,16 +229,27 @@ class TaskStore:
             for r in rows
         ]
 
+    def latest_seq(self, node: str | None = None) -> int:
+        q = "SELECT MAX(seq) FROM events"
+        args: list[Any] = []
+        if node:
+            q += " WHERE node=?"
+            args.append(node)
+        with self._conn() as c:
+            row = c.execute(q, args).fetchone()
+        return (row[0] or 0)
+
     # --- mapping ------------------------------------------------------------
     @staticmethod
     def _row_to_task(row: sqlite3.Row) -> dict:
+        keys = row.keys()
         return {
             "id": row["id"],
             "node": row["node"],
             "scope": row["scope"],
             "kind": row["kind"],
             "title": row["title"],
-            "instruction": row["instruction"],
+            "instruction": row["instruction"] or "",
             "env": row["env"],
             "payload": json.loads(row["payload"] or "{}"),
             "status": row["status"],
@@ -234,4 +261,7 @@ class TaskStore:
             "result": json.loads(row["result"]) if row["result"] else None,
             "proofPath": row["proof_path"],
             "inverse": json.loads(row["inverse"]) if row["inverse"] else None,
+            "options": json.loads(row["options"]) if "options" in keys and row["options"] else None,
+            "fields": json.loads(row["fields"]) if "fields" in keys and row["fields"] else None,
+            "deadline": row["deadline"] if "deadline" in keys else None,
         }

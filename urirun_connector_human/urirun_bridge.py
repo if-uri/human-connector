@@ -11,6 +11,14 @@ from __future__ import annotations
 
 from .connector import MEMORY, STORE
 from . import handlers
+from .handlers import (
+    request_task as _request_task,
+    poll_task as _poll_task,
+    resolve_task as _resolve_task,
+    cancel_task as _cancel_task,
+    claim_task as _claim_task,
+    satisfy_precondition as _satisfy_precondition,
+)
 
 VERSION = "urirun.bindings.v2"
 
@@ -19,23 +27,27 @@ VERSION = "urirun.bindings.v2"
 # --------------------------------------------------------------------------- #
 
 def request_task(**payload) -> dict:
-    return handlers.request_task(payload, STORE, MEMORY)
+    return _request_task(payload, STORE, MEMORY)
 
 
 def poll_task(**payload) -> dict:
-    return handlers.poll_task(payload, STORE, MEMORY)
+    return _poll_task(payload, STORE, MEMORY)
 
 
 def resolve_task(**payload) -> dict:
-    return handlers.resolve_task(payload, STORE, MEMORY)
+    return _resolve_task(payload, STORE, MEMORY)
 
 
 def cancel_task(**payload) -> dict:
-    return handlers.cancel_task(payload, STORE, MEMORY)
+    return _cancel_task(payload, STORE, MEMORY)
+
+
+def claim_task(**payload) -> dict:
+    return _claim_task(payload, STORE, MEMORY)
 
 
 def satisfy_precondition(**payload) -> dict:
-    return handlers.satisfy_precondition(payload, STORE, MEMORY)
+    return _satisfy_precondition(payload, STORE, MEMORY)
 
 
 # --------------------------------------------------------------------------- #
@@ -81,9 +93,26 @@ def urirun_bindings() -> dict:
                         "title": {"type": "string"},
                         "instruction": {"type": "string"},
                         "scope": _SCHEMA_SCOPE,
-                        "kind": _SCHEMA_KIND,
+                        "kind": {"type": "string",
+                                 "enum": ["action", "judgement", "safety", "grant", "choice", "form"],
+                                 "default": "action"},
                         "env": {"type": "string"},
                         "inverse": {"type": "object"},
+                        "options": {"type": "array", "items": {"type": "string"},
+                                    "description": "For kind=choice: list of option labels"},
+                        "fields": {"type": "array",
+                                   "description": "For kind=form: list of {name,type,label,required,hint}",
+                                   "items": {"type": "object",
+                                             "properties": {
+                                                 "name": {"type": "string"},
+                                                 "type": {"type": "string",
+                                                          "enum": ["text","number","textarea","camera","photo"]},
+                                                 "label": {"type": "string"},
+                                                 "required": {"type": "boolean"},
+                                                 "hint": {"type": "string"},
+                                             }}},
+                        "deadline": {"type": "number",
+                                     "description": "Unix timestamp after which task is overdue"},
                     },
                 },
             },
@@ -120,6 +149,24 @@ def urirun_bindings() -> dict:
                         "by": {"type": "string"},
                         "note": {"type": "string"},
                         "proofPath": {"type": "string"},
+                    },
+                },
+            },
+            # ── claim ────────────────────────────────────────────────────────────
+            "human://{node}/task/claim": {
+                "uri": "human://{node}/task/claim",
+                "kind": "command",
+                "adapter": "local-function",
+                "python": {"type": "python", "module": _MOD, "export": "claim_task"},
+                "policy": {"allowExecute": True},
+                "meta": {"connector": "human", "label": "Reserve task for a specific worker (multi-worker queues)"},
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["taskId"],
+                    "additionalProperties": True,
+                    "properties": {
+                        "taskId": {"type": "string"},
+                        "by": {"type": "string", "description": "Worker identifier"},
                     },
                 },
             },
