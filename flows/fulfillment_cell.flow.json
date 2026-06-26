@@ -1,0 +1,74 @@
+{
+  "_comment": "A saved flow document = the homoiconic plan (Faza 2). Addressable as flow://cell-a/fulfillment-cell/command/run once the flow:// scheme lands; today it is loaded and dispatched step-by-step by the thin-driver. The point of this example: machine, robot and human steps live in ONE URI space and are dispatched the same way.",
+  "intent": "Fulfill order ORD-7781: locate SKU-22, robot transfers to pack station, human inspects & seals, mark shipped.",
+  "environment": {
+    "env": "cell-a",
+    "shift": "2026-06-26-day",
+    "armCalibration": "v3"
+  },
+  "task": { "id": "fulfillment-cell" },
+  "steps": [
+    {
+      "id": "locate-stock",
+      "uri": "inventory://host/stock/query/locate",
+      "payload": { "sku": "SKU-22", "order": "ORD-7781" }
+    },
+    {
+      "id": "operator-grant",
+      "uri": "human://cell-a/precondition/command/satisfy",
+      "payload": {
+        "node": "cell-a",
+        "need": { "kind": "acquire", "what": "operator-grant", "scope": "per-env" },
+        "envProfile": { "env": "cell-a", "shift": "2026-06-26-day", "armCalibration": "v3" },
+        "title": "Authorise robot cell A for this shift",
+        "instruction": "Confirm you are the responsible operator for cell A this shift. Asked once per shift; the twin remembers it."
+      },
+      "comment": "per-env grant: asked once per environment, recalled on a matching twin (Faza 6 + Faza 1)."
+    },
+    {
+      "id": "safety-clear",
+      "uri": "human://cell-a/task/command/request",
+      "payload": {
+        "node": "cell-a",
+        "scope": "per-instance",
+        "kind": "safety",
+        "title": "Confirm arm path is clear (ORD-7781)",
+        "instruction": "Visually confirm nobody is in the robot arm's path from bin to pack station, then tap Done."
+      },
+      "comment": "per-instance safety: NEVER recalled — re-asked every single run."
+    },
+    {
+      "id": "robot-transfer",
+      "uri": "robot://cell-a/arm/command/transfer",
+      "payload": { "from": "bin", "to": "pack-station", "item": "SKU-22", "order": "ORD-7781" },
+      "comment": "machine/robot step, gated behind the human safety confirm above; declares an inverse (move back)."
+    },
+    {
+      "id": "inspect-seal",
+      "uri": "human://cell-a/task/command/request",
+      "payload": {
+        "node": "cell-a",
+        "scope": "per-instance",
+        "kind": "action",
+        "title": "Inspect & seal box for ORD-7781",
+        "instruction": "Check the item matches SKU-22, seal the box, attach a photo of the sealed label.",
+        "inverse": {
+          "uri": "human://cell-a/task/command/request",
+          "payload": {
+            "node": "cell-a",
+            "scope": "per-instance",
+            "kind": "action",
+            "title": "UNDO: unseal & return ORD-7781 to bin",
+            "instruction": "The downstream step failed. Unseal the box and return the item to its bin."
+          }
+        }
+      },
+      "comment": "per-instance dexterous human action with a human inverse (reversibility)."
+    },
+    {
+      "id": "mark-shipped",
+      "uri": "dispatch://host/orders/command/mark-shipped",
+      "payload": { "order": "ORD-7781" }
+    }
+  ]
+}

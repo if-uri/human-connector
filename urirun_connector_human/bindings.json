@@ -1,0 +1,107 @@
+{
+  "_comment": "Declarative bindings for urirun-connector-human. Consumed by `urirun host deploy --bindings bindings.json`, `compile_registry`, and `bindings_from_spec`. The `local-function` adapter executes `config.ref`. Field names (ref/mutates/reversible/inputSchema) follow the current urirun conventions; run `urirun connectors lint` / `sync-manifest` to reconcile against your installed version.",
+  "connector": "human",
+  "version": "0.1.0",
+  "scheme": "human",
+  "bindings": [
+    {
+      "uri": "human://{node}/task/command/request",
+      "kind": "command",
+      "adapter": "local-function",
+      "config": { "ref": "urirun_connector_human.connector:local_dispatch" },
+      "mutates": true,
+      "reversible": true,
+      "safe": false,
+      "summary": "Post a unit of human work; returns pending with next:await.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "node": { "type": "string", "description": "Physical cell / environment, e.g. cell-a" },
+          "title": { "type": "string" },
+          "instruction": { "type": "string" },
+          "scope": { "type": "string", "enum": ["per-instance", "per-env"], "default": "per-instance" },
+          "kind": { "type": "string", "enum": ["action", "judgement", "safety", "grant"], "default": "action" },
+          "env": { "type": "string" },
+          "inverse": { "type": "object", "description": "{uri, payload} replayed on rollback if the worker confirms" }
+        }
+      }
+    },
+    {
+      "uri": "human://{node}/task/query/poll",
+      "kind": "query",
+      "adapter": "local-function",
+      "config": { "ref": "urirun_connector_human.connector:local_dispatch" },
+      "mutates": false,
+      "safe": true,
+      "summary": "Read a task's state; terminal states carry proof + inverse.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["taskId"],
+        "properties": { "taskId": { "type": "string" } }
+      }
+    },
+    {
+      "uri": "human://{node}/task/command/resolve",
+      "kind": "command",
+      "adapter": "local-function",
+      "config": { "ref": "urirun_connector_human.connector:local_dispatch" },
+      "mutates": true,
+      "safe": false,
+      "summary": "Worker side: submit a task outcome (called by the human surface).",
+      "inputSchema": {
+        "type": "object",
+        "required": ["taskId"],
+        "properties": {
+          "taskId": { "type": "string" },
+          "outcome": { "type": "string", "enum": ["done", "declined"], "default": "done" },
+          "by": { "type": "string" },
+          "note": { "type": "string" },
+          "proofPath": { "type": "string" },
+          "result": { "type": "object" }
+        }
+      }
+    },
+    {
+      "uri": "human://{node}/task/command/cancel",
+      "kind": "command",
+      "adapter": "local-function",
+      "config": { "ref": "urirun_connector_human.connector:local_dispatch" },
+      "mutates": true,
+      "safe": false,
+      "summary": "Cancel a pending task (used by reversibility / cleanup).",
+      "inputSchema": {
+        "type": "object",
+        "required": ["taskId"],
+        "properties": { "taskId": { "type": "string" }, "reason": { "type": "string" } }
+      }
+    },
+    {
+      "uri": "human://{node}/precondition/command/satisfy",
+      "kind": "command",
+      "adapter": "local-function",
+      "config": { "ref": "urirun_connector_human.connector:local_dispatch" },
+      "mutates": true,
+      "safe": false,
+      "summary": "Faza 6 provider: acquire a per-environment human grant; recalled on a matching twin.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["need"],
+        "properties": {
+          "node": { "type": "string" },
+          "need": {
+            "type": "object",
+            "required": ["what"],
+            "properties": {
+              "kind": { "type": "string", "default": "acquire" },
+              "what": { "type": "string" },
+              "scope": { "type": "string", "enum": ["per-env"], "default": "per-env" }
+            }
+          },
+          "envProfile": { "type": "object", "description": "State that, if changed, forces re-asking (drift)" },
+          "taskId": { "type": "string", "description": "Resume an in-flight grant task" }
+        }
+      }
+    }
+  ]
+}
