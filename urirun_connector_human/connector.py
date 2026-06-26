@@ -40,6 +40,9 @@ ROUTES: dict[str, tuple[str, Callable]] = {
     "human://{node}/task/command/resolve":         ("command", _bind(handlers.resolve_task)),
     "human://{node}/task/command/cancel":          ("command", _bind(handlers.cancel_task)),
     "human://{node}/precondition/command/satisfy": ("command", _bind(handlers.satisfy_precondition)),
+    # Short-form aliases used by handlers' own next.poll / next.provider fields:
+    "human://{node}/task/poll":                   ("query",   _bind(handlers.poll_task)),
+    "human://{node}/grant/satisfy":               ("command", _bind(handlers.satisfy_precondition)),
 }
 
 _TEMPLATE_RE = {
