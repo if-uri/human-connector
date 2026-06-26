@@ -9,12 +9,14 @@ It shares the SAME TaskStore the connector writes to, and resolves through the
 SAME handler (`handlers.resolve_task`), so a tap here is identical to any other
 `human://{node}/task/command/resolve` call. No framework, no build step.
 
-Run:  python -m urirun_connector_human.surface --port 8788
+Run:  python -m urirun_connector_human.surface
+Configuration via .env (see project root) or environment variables.
 """
 from __future__ import annotations
 
 import argparse
 import base64
+import io
 import json
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +24,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import handlers
+from ._env import get_lan_ip, get_lan_url, get_node, get_port, get_host
 from .connector import MEMORY, STORE
 
 PROOF_DIR = Path.home() / ".urirun-human" / "proofs"
@@ -48,7 +51,12 @@ PAGE = """<!doctype html>
   header .node { margin-left:auto; font-size:13px; color:#8b97a6;
                  background:#161b22; padding:4px 10px; border-radius:999px; }
   main { padding:16px; max-width:680px; margin:0 auto; }
-  .empty { text-align:center; color:#6e7a89; padding:60px 20px; }
+  .empty { text-align:center; color:#6e7a89; padding:40px 20px; }
+  .qr-card { background:#161b22; border:1px solid #222b36; border-radius:14px;
+             padding:20px; margin:0 0 20px; text-align:center; }
+  .qr-card img { width:180px; height:180px; border-radius:8px; background:#fff; }
+  .qr-url { font-size:13px; color:#8b97a6; margin:10px 0 0; word-break:break-all; }
+  .qr-url a { color:#58a6ff; }
   .card { background:#161b22; border:1px solid #222b36; border-radius:14px;
           padding:16px; margin:0 0 14px; }
   .card h3 { margin:0 0 6px; font-size:17px; }
@@ -71,7 +79,14 @@ PAGE = """<!doctype html>
 <body>
 <header><b>urirun</b> <span style="color:#6e7a89">human tasks</span>
   <span class="node" id="node-pill">node: —</span></header>
-<main id="list"><div class="empty">Loading…</div></main>
+<main>
+  <div id="qr-section" style="display:none" class="qr-card">
+    <div style="font-size:13px;color:#8b97a6;margin-bottom:12px">Scan to open on phone</div>
+    <img id="qr-img" src="" alt="QR">
+    <div class="qr-url"><a id="qr-link" href="#"></a></div>
+  </div>
+  <div id="list"><div class="empty">Loading…</div></div>
+</main>
 <div class="foot">A tap here = <code>human://{node}/task/command/resolve</code></div>
 <script>
 const qs = new URLSearchParams(location.search);
@@ -79,13 +94,32 @@ const NODE = qs.get('node') || '';
 document.getElementById('node-pill').textContent = 'node: ' + (NODE || 'all');
 let lastSig = '';
 
+// Load server info + QR (only on desktop, skip when already on phone)
+async function loadInfo(){
+  try {
+    const r = await fetch('/api/info');
+    const info = await r.json();
+    const workerUrl = info.workerUrl;
+    const qrUrl = info.qrUrl;
+    const sec = document.getElementById('qr-section');
+    const img = document.getElementById('qr-img');
+    const lnk = document.getElementById('qr-link');
+    img.src = qrUrl;
+    lnk.href = workerUrl;
+    lnk.textContent = workerUrl;
+    sec.style.display = 'block';
+  } catch(e){}
+}
+// Show QR only on a larger screen (desktop/tablet); phone users see the task list directly
+if (window.innerWidth > 500) loadInfo();
+
 function badge(k){ return ({grant:'🔑 grant',safety:'⚠ safety',judgement:'👁 judgement',action:'✋ action'}[k]||k); }
 
 async function load(){
   const r = await fetch('/api/tasks' + (NODE ? ('?node='+encodeURIComponent(NODE)) : ''));
   const tasks = await r.json();
   const sig = JSON.stringify(tasks.map(t=>[t.id,t.status]));
-  if (sig === lastSig) return;          // avoid clobbering an in-progress form
+  if (sig === lastSig) return;
   lastSig = sig;
   const root = document.getElementById('list');
   if (!tasks.length){ root.innerHTML = '<div class="empty">✓ No pending tasks.<br>Waiting for the host…</div>'; return; }
@@ -131,6 +165,28 @@ load(); setInterval(load, 1500);
 </body></html>"""
 
 
+def _qr_png(url: str) -> bytes | None:
+    try:
+        import qrcode  # type: ignore
+        qr = qrcode.make(url)
+        buf = io.BytesIO()
+        qr.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _print_qr(url: str) -> None:
+    try:
+        import qrcode  # type: ignore
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(url)
+        qr.make(fit=True)
+        qr.print_ascii(invert=True)
+    except Exception:
+        pass
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
@@ -157,6 +213,28 @@ class Handler(BaseHTTPRequestHandler):
             since = int((q.get("since") or ["0"])[0])
             node = (q.get("node") or [None])[0]
             self._json(200, STORE.events_since(since, node))
+        elif u.path == "/api/qr":
+            target = (q.get("url") or [None])[0]
+            if not target:
+                node = (q.get("node") or [get_node()])[0]
+                port = self.server.server_address[1]
+                target = f"{get_lan_url(port)}/?node={node}"
+            png = _qr_png(target)
+            if png:
+                self._send(200, png, "image/png")
+            else:
+                self._json(503, {"error": "qrcode package not available", "url": target})
+        elif u.path == "/api/info":
+            port = self.server.server_address[1]
+            node = get_node()
+            lan = get_lan_url(port)
+            self._json(200, {
+                "lanUrl": lan,
+                "workerUrl": f"{lan}/?node={node}",
+                "qrUrl": f"{lan}/api/qr?node={node}",
+                "node": node,
+                "db": str(STORE.path),
+            })
         else:
             self._json(404, {"error": "not found"})
 
@@ -192,11 +270,23 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
 
-def serve(port: int = 8797, host: str = "0.0.0.0") -> None:
+def serve(port: int | None = None, host: str | None = None, node: str | None = None) -> None:
+    port = port if port is not None else get_port()
+    host = host if host is not None else get_host()
+    node = node if node is not None else get_node()
+
     httpd = ThreadingHTTPServer((host, port), Handler)
-    url = f"http://localhost:{port}"
-    print(f"[urirun-human] surface on {url}  (DB: {STORE.path})")
-    print(f"[urirun-human] open {url}/?node=cell-a on the worker's phone")
+    lan_url = get_lan_url(port)
+    worker_url = f"{lan_url}/?node={node}"
+
+    print(f"[urirun-human] surface  http://localhost:{port}/?node={node}")
+    print(f"[urirun-human] LAN URL  {worker_url}")
+    print(f"[urirun-human] QR code  {lan_url}/api/qr?node={node}")
+    print(f"[urirun-human] DB       {STORE.path}")
+    print()
+    _print_qr(worker_url)
+    print()
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -205,7 +295,8 @@ def serve(port: int = 8797, host: str = "0.0.0.0") -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8797)
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--port", type=int, default=None, help="override URIRUN_HUMAN_PORT")
+    ap.add_argument("--host", default=None, help="override URIRUN_HUMAN_HOST")
+    ap.add_argument("--node", default=None, help="override URIRUN_HUMAN_NODE")
     args = ap.parse_args()
-    serve(args.port, args.host)
+    serve(args.port, args.host, args.node)

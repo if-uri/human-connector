@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 
 import _shim as shim  # noqa: E402  (same dir)
 from urirun_connector_human import surface  # noqa: E402
+from urirun_connector_human._env import get_node, get_port, get_host  # noqa: E402
 from urirun_connector_human.connector import MEMORY, STORE  # noqa: E402
 
 FLOW = json.loads((ROOT / "flows" / "fulfillment_cell.flow.json").read_text())
@@ -103,11 +104,12 @@ def main(argv=None) -> None:
                     help="inject a failure at the final step to show reversible rollback")
     ap.add_argument("--serve", action="store_true",
                     help="start the human web surface and resolve tasks by tapping")
-    ap.add_argument("--port", type=int, default=8797)
+    ap.add_argument("--port", type=int, default=None,
+                    help="surface port (default: URIRUN_HUMAN_PORT or 8797)")
     args = ap.parse_args(argv)
 
     if args.serve:
-        run_serve(args.port)
+        run_serve(args.port or get_port())
     elif args.fail_last:
         run_fail_last()
     else:
