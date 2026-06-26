@@ -119,15 +119,15 @@ python demo/demo.py
 python demo/demo.py --fail-last
 
 # 3) Tryb na żywo: prawdziwy człowiek rozwiązuje zadania przez telefon.
-python demo/demo.py --serve --port 8788
-#    → otwórz http://localhost:8788/?node=cell-a na telefonie pracownika
+python demo/demo.py --serve --port 8797
+#    → otwórz http://localhost:8797/?node=cell-a na telefonie pracownika
 ```
 
 ### Sam serwis pracownika (bez demo)
 
 ```bash
-python -m urirun_connector_human.surface          # nasłuch na :8788
-# otwórz http://localhost:8788/?node=cell-a
+python -m urirun_connector_human.surface          # nasłuch na :8797
+# otwórz http://localhost:8797/?node=cell-a
 ```
 
 Ciemny UI, duże cele dotykowe, przechwycenie zdjęcia (→ zapis dowodu jako artefakt),

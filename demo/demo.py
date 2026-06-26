@@ -103,7 +103,7 @@ def main(argv=None) -> None:
                     help="inject a failure at the final step to show reversible rollback")
     ap.add_argument("--serve", action="store_true",
                     help="start the human web surface and resolve tasks by tapping")
-    ap.add_argument("--port", type=int, default=8788)
+    ap.add_argument("--port", type=int, default=8797)
     args = ap.parse_args(argv)
 
     if args.serve:

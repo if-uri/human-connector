@@ -192,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
 
-def serve(port: int = 8788, host: str = "0.0.0.0") -> None:
+def serve(port: int = 8797, host: str = "0.0.0.0") -> None:
     httpd = ThreadingHTTPServer((host, port), Handler)
     url = f"http://localhost:{port}"
     print(f"[urirun-human] surface on {url}  (DB: {STORE.path})")
@@ -205,7 +205,7 @@ def serve(port: int = 8788, host: str = "0.0.0.0") -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8788)
+    ap.add_argument("--port", type=int, default=8797)
     ap.add_argument("--host", default="0.0.0.0")
     args = ap.parse_args()
     serve(args.port, args.host)
