@@ -50,12 +50,23 @@ _SCHEMA_KIND = {"type": "string", "enum": ["action", "judgement", "safety", "gra
 
 
 def urirun_bindings() -> dict:
-    """Called by the urirun.bindings entry point loader at node startup."""
+    """Called by the urirun.bindings entry point loader at node startup.
+
+    URI layout — urirun routes by (resource, operation) so each handler must have a
+    unique pair.  The canonical scheme is human://{node}/{resource}/{operation}:
+
+      task/create     → POST a new task (returns pending + next:await)
+      task/poll       → GET task status
+      task/resolve    → PUT worker outcome (done/decline)
+      task/cancel     → DELETE / cancel for reversibility
+      grant/satisfy   → Phase-6 provider: per-env precondition grant
+    """
     return {
         "version": VERSION,
         "bindings": {
-            "human://{node}/task/command/request": {
-                "uri": "human://{node}/task/command/request",
+            # ── create ──────────────────────────────────────────────────────────
+            "human://{node}/task/create": {
+                "uri": "human://{node}/task/create",
                 "kind": "command",
                 "adapter": "local-function",
                 "python": {"type": "python", "module": _MOD, "export": "request_task"},
@@ -76,13 +87,14 @@ def urirun_bindings() -> dict:
                     },
                 },
             },
-            "human://{node}/task/query/poll": {
-                "uri": "human://{node}/task/query/poll",
+            # ── poll ─────────────────────────────────────────────────────────────
+            "human://{node}/task/poll": {
+                "uri": "human://{node}/task/poll",
                 "kind": "query",
                 "adapter": "local-function",
                 "python": {"type": "python", "module": _MOD, "export": "poll_task"},
                 "policy": {"allowExecute": True},
-                "meta": {"connector": "human", "label": "Poll a task state (pending|done|declined)"},
+                "meta": {"connector": "human", "label": "Poll task state (pending|done|declined)"},
                 "inputSchema": {
                     "type": "object",
                     "required": ["taskId"],
@@ -90,8 +102,9 @@ def urirun_bindings() -> dict:
                     "properties": {"taskId": {"type": "string"}},
                 },
             },
-            "human://{node}/task/command/resolve": {
-                "uri": "human://{node}/task/command/resolve",
+            # ── resolve ──────────────────────────────────────────────────────────
+            "human://{node}/task/resolve": {
+                "uri": "human://{node}/task/resolve",
                 "kind": "command",
                 "adapter": "local-function",
                 "python": {"type": "python", "module": _MOD, "export": "resolve_task"},
@@ -110,8 +123,9 @@ def urirun_bindings() -> dict:
                     },
                 },
             },
-            "human://{node}/task/command/cancel": {
-                "uri": "human://{node}/task/command/cancel",
+            # ── cancel ───────────────────────────────────────────────────────────
+            "human://{node}/task/cancel": {
+                "uri": "human://{node}/task/cancel",
                 "kind": "command",
                 "adapter": "local-function",
                 "python": {"type": "python", "module": _MOD, "export": "cancel_task"},
@@ -127,8 +141,9 @@ def urirun_bindings() -> dict:
                     },
                 },
             },
-            "human://{node}/precondition/command/satisfy": {
-                "uri": "human://{node}/precondition/command/satisfy",
+            # ── precondition grant ───────────────────────────────────────────────
+            "human://{node}/grant/satisfy": {
+                "uri": "human://{node}/grant/satisfy",
                 "kind": "command",
                 "adapter": "local-function",
                 "python": {"type": "python", "module": _MOD, "export": "satisfy_precondition"},
