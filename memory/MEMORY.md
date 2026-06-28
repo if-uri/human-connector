@@ -1,0 +1,2 @@
+- [urirun CDP login autonomy](urirun-cdp-login-autonomy.md) — why login-gated CDP flows fail (copy_from vs user_data_dir, daemon restart, profile login)
+- [ifURI contract-layer state](ifuri-contract-layer-state.md) — contract kernel extraction, editable-install order, invariant-enforcement gaps
